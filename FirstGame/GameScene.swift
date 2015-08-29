@@ -34,6 +34,7 @@ struct PhysicsCategory {
     static let All       : UInt32 = UInt32.max
     static let Monster   : UInt32 = 0b1       // 1
     static let Projectile: UInt32 = 0b10      // 2
+    static let Wall      : UInt32 = 0b100      // 4
 }
 
 func + (left: CGPoint, right: CGPoint) -> CGPoint {
@@ -87,11 +88,21 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         physicsWorld.gravity = CGVectorMake(0, 0)
         physicsWorld.contactDelegate = self
         
+        // Setup top and bottom walls
+        let topRightPoint = CGPoint(x: size.width, y: size.height)
+        let topLeftPoint = CGPoint(x: 0.0, y: size.height)
+        let bottomRightPoint = CGPoint(x: size.width, y: 0)
+        let bottomLeftPoint = CGPoint(x: 0, y: 0)
+        
+        let topWall = SKPhysicsBody(edgeFromPoint: topLeftPoint, toPoint: topRightPoint)
+        let bottomWall = SKPhysicsBody(edgeFromPoint: bottomLeftPoint, toPoint: bottomRightPoint)
+        self.physicsBody = SKPhysicsBody(bodies: [topWall, bottomWall]);
+        self.physicsBody?.categoryBitMask = PhysicsCategory.Wall
         
         runAction(SKAction.repeatActionForever(
             SKAction.sequence([
                 SKAction.runBlock(addMonster),
-                SKAction.waitForDuration(1.0)
+                SKAction.waitForDuration(0.7)
                 ])
             ))
     }
@@ -131,7 +142,6 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         // Create the actions
         let actionMove = SKAction.moveTo(CGPoint(x: -monster.size.width/2, y: actualY), duration: NSTimeInterval(actualDuration))
         let actionMoveDone = SKAction.removeFromParent()
-//        monster.runAction(SKAction.sequence([actionMove, actionMoveDone]))
         
         let loseAction = SKAction.runBlock() {
             let reveal = SKTransition.flipHorizontalWithDuration(0.5)
@@ -148,45 +158,39 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         
         let touch = touches.first
         let touchLocation = touch!.locationInNode(self)
-//        print(touch?.locationInNode(self))
-//        print(touch?.locationInView(view))
-        
-//        // 1 - Choose one of the touches to work with
-//        let touch = touches.first?
-//        let touchLocation = touches.first?.locationInNode(self)
-//
-//        // 2 - Set up initial location of projectile
+
+        // 2 - Set up initial location of projectile
         let projectile = SKSpriteNode(imageNamed: "projectile")
         projectile.physicsBody = SKPhysicsBody(circleOfRadius: projectile.size.width/2)
         projectile.physicsBody?.dynamic = true
         projectile.physicsBody?.categoryBitMask = PhysicsCategory.Projectile
         projectile.physicsBody?.contactTestBitMask = PhysicsCategory.Monster
-        projectile.physicsBody?.collisionBitMask = PhysicsCategory.None
+        projectile.physicsBody?.collisionBitMask = PhysicsCategory.Wall
+        
+        projectile.physicsBody?.restitution = 1.0
+        projectile.physicsBody?.friction = 0.0
+        projectile.physicsBody?.linearDamping = 0.0
+        projectile.physicsBody?.angularDamping = 0.0
+        
+        
+
+        
         projectile.physicsBody?.usesPreciseCollisionDetection = true
         projectile.position = player.position
-//
-//        // 3 - Determine offset of location to projectile
+
+        // 3 - Determine offset of location to projectile
         let offset = touchLocation - projectile.position
 
         // 4 - Bail out if you are shooting down or backwards
-        if (offset.x < 0) { return }
+        if (offset.x < 0) {
+            print("ball out")
+            return
+        }
         
         // 5 - OK to add now - you've double checked position
         addChild(projectile)
         
-        // 6 - Get the direction of where to shoot
-        let direction = offset.normalized()
-        
-        // 7 - Make it shoot far enough to be guaranteed off screen
-        let shootAmount = direction * 1000
-        
-        // 8 - Add the shoot amount to the current position
-        let realDest = shootAmount + projectile.position
-        
-        // 9 - Create the actions
-        let actionMove = SKAction.moveTo(realDest, duration: 2.0)
-        let actionMoveDone = SKAction.removeFromParent()
-        projectile.runAction(SKAction.sequence([actionMove, actionMoveDone]))
+        projectile.physicsBody?.velocity = CGVector.init(dx: offset.x * 10, dy: offset.y * 10)
         
     }
     
@@ -218,9 +222,20 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         // 2
         if ((firstBody.categoryBitMask & PhysicsCategory.Monster != 0) &&
             (secondBody.categoryBitMask & PhysicsCategory.Projectile != 0)) {
+                if  firstBody.node == nil || secondBody.node == nil {
+                    print("Nil CASE !!!!!!!!!")
+                    return
+                }
                 projectileDidCollideWithMonster(firstBody.node as! SKSpriteNode, monster: secondBody.node as! SKSpriteNode)
         }
         
+    }
+    
+    override func didSimulatePhysics() {
+        for node in self.children {
+            // remove nodes when it's out of bound
+            if (node.position.x > size.width * 2) || (node.position.x < size.width * -1) { node.removeFromParent() }
+        }
     }
     
 }
